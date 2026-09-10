@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coffee Label — BLE Control</title>
+<style>
+  :root{
+    --bg:#faf7f2; --panel:#fff; --ink:#20140c; --muted:#7a6a5c;
+    --line:#e4d9cb; --accent:#6f4e37; --accent-ink:#fff;
+    --ok:#2f7d4f; --err:#b3402a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:20px;line-height:1.4}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:16px;margin-bottom:16px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button{font:inherit;border:1px solid var(--accent);background:var(--accent);
+    color:var(--accent-ink);border-radius:6px;padding:8px 14px;cursor:pointer}
+  button.secondary{background:#fff;color:var(--accent)}
+  button.danger{background:#fff;color:var(--err);border-color:var(--err)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  input{font:inherit;border:1px solid var(--line);border-radius:6px;padding:7px 9px;
+    background:#fff;color:var(--ink)}
+  label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
+  .field{display:flex;flex-direction:column;min-width:110px}
+  .field.grow{flex:1;min-width:180px}
+  .status{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#c9beb0}
+  .dot.on{background:var(--ok)}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:10px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase}
+  td.num{white-space:nowrap}
+  .rowbtns{display:flex;gap:6px}
+  .rowbtns button{padding:4px 9px;font-size:12px}
+  #log{background:#1d1611;color:#e8ddce;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
+    border-radius:8px;padding:10px;height:150px;overflow-y:auto;white-space:pre-wrap}
+  .warn{background:#fff4e5;border:1px solid #e8c98a;color:#6b4c00;border-radius:8px;
+    padding:10px 12px;font-size:13px;margin-bottom:16px}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+
+<h1>Coffee Label — BLE Control</h1>
+<div class="sub">Manage the coffee presets stored on the "EtiquetaCafe" e-paper label over Bluetooth.</div>
+
+<div id="safariWarn" class="warn" style="display:none">
+  Safari on iPhone does not support Web Bluetooth in any version. Use the
+  <strong>Bluefy</strong> app instead (App Store), or open this page on Android Chrome.
+</div>
+<div id="httpsWarn" class="warn" style="display:none">
+  Web Bluetooth only works over HTTPS (or on localhost). Opening this file directly
+  from your Downloads folder will not connect — host it (GitHub Pages works fine)
+  and open it from there.
+</div>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <div class="status"><span id="dot" class="dot"></span><span id="statusText">Not connected</span></div>
+    <div class="row">
+      <button id="btnConnect">Connect</button>
+      <button id="btnDisconnect" class="secondary" disabled>Disconnect</button>
+      <button id="btnSync" class="secondary" disabled>Refresh list</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between;align-items:baseline">
+    <strong id="formTitle">Add a new coffee</strong>
+    <button id="btnCancelEdit" class="secondary" style="display:none">Cancel edit</button>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <div class="field grow">
+      <label for="fNom">Coffee name</label>
+      <input id="fNom" maxlength="23" placeholder="e.g. Cafè Incendiario">
+    </div>
+    <div class="field">
+      <label for="fGrams">Grams</label>
+      <input id="fGrams" type="number" step="0.5" min="0" max="60" placeholder="17.5">
+    </div>
+    <div class="field">
+      <label for="fMolta">Grind number</label>
+      <input id="fMolta" type="number" step="0.5" min="0" max="15" placeholder="3.5">
+    </div>
+    <div class="field grow">
+      <label for="fNotes">Sensory notes</label>
+      <input id="fNotes" maxlength="39" placeholder="e.g. Jasmine, lemon">
+    </div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <button id="btnSave" disabled>Save to label</button>
+  </div>
+  <div class="hint">Accented letters are fine here — the label firmware converts
+    them to plain ASCII automatically (the e-paper font can't show accents).</div>
+</div>
+
+<div class="card">
+  <strong>Presets on the label</strong>
+  <table id="tbl">
+    <thead><tr><th>Name</th><th>Grams</th><th>Grind</th><th>Notes</th><th></th></tr></thead>
+    <tbody id="tblBody"><tr><td colspan="5" class="hint">Connect and refresh to see the current list.</td></tr></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <strong>Log</strong>
+  <div id="log"></div>
+</div>
+
+<script>
+// --------------------------------------------------------------------------
+// Protocol Bluetooth (mateix format que fa servir EtiquetaCafe.ino):
+//   una linia de text per comanda/resposta, acabada en '\n'.
+// Enviem cada linia partida en trossos petits (<=18 bytes) perque, per molt
+// que aquest navegador negociï un MTU gran, la placa suposa el minim garantit
+// (leccio apresa a NOTES-CrowPanel42.md #9). Les notificacions que arriben
+// del dispositiu tambe poden venir partides igual, i les reunim aqui.
+// --------------------------------------------------------------------------
+const SERVEI_UUID    = 'a1e8f350-5b3e-4c2c-9a1a-2f7f6a9d1001';
+const CARACT_RX_UUID = 'a1e8f350-5b3e-4c2c-9a1a-2f7f6a9d1002';
+const CARACT_TX_UUID = 'a1e8f350-5b3e-4c2c-9a1a-2f7f6a9d1003';
+const MIDA_TROS = 18;
+
+let device = null, rxChar = null, txChar = null;
+let rxBuf = '';
+let presets = [];       // darrera llista rebuda amb SYNC
+let syncTemp = null;    // acumulador mentre arriba un SYNC
+let editingName = null; // != null quan el formulari esta editant un preset existent
+
+const $ = (id) => document.getElementById(id);
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+function log(msg) {
+  const el = $('log');
+  const t = new Date().toLocaleTimeString();
+  el.textContent += `[${t}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function setConnected(on) {
+  $('dot').classList.toggle('on', on);
+  $('statusText').textContent = on ? `Connected to ${device?.name || 'label'}` : 'Not connected';
+  $('btnConnect').disabled = on;
+  $('btnDisconnect').disabled = !on;
+  $('btnSync').disabled = !on;
+  $('btnSave').disabled = !on;
+}
+
+// Trossejat de sortida: cada escriptura BLE porta com a molt MIDA_TROS bytes.
+async function enviaComanda(text) {
+  if (!rxChar) return;
+  const bytes = enc.encode(text + '\n');
+  for (let pos = 0; pos < bytes.length; pos += MIDA_TROS) {
+    const tros = bytes.slice(pos, pos + MIDA_TROS);
+    await rxChar.writeValue(tros);
+  }
+  log('-> ' + text);
+}
+
+function onNotify(ev) {
+  const tros = dec.decode(ev.target.value);
+  rxBuf += tros;
+  let idx;
+  while ((idx = rxBuf.indexOf('\n')) >= 0) {
+    const linia = rxBuf.slice(0, idx);
+    rxBuf = rxBuf.slice(idx + 1);
+    if (linia.length > 0) processaLinia(linia);
+  }
+}
+
+function processaLinia(linia) {
+  log('<- ' + linia);
+  const parts = linia.split('|');
+  const cmd = parts[0];
+
+  if (cmd === 'CNT') {
+    syncTemp = [];
+  } else if (cmd === 'ITEM') {
+    if (syncTemp) syncTemp.push({ nom: parts[1], grams: parts[2], molta: parts[3], notes: parts[4] || '' });
+  } else if (cmd === 'DONE' && parts[1] === 'SYNC') {
+    presets = syncTemp || [];
+    syncTemp = null;
+    renderTable();
+  } else if (cmd === 'OK' || cmd === 'ERR') {
+    // despres de qualsevol ADD/DEL/REN reeixit o fallit, refresquem la llista
+    if (cmd === 'OK') setTimeout(() => enviaComanda('SYNC'), 150);
+  }
+}
+
+function renderTable() {
+  const body = $('tblBody');
+  body.innerHTML = '';
+  if (presets.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" class="hint">No presets yet — add one above.</td></tr>';
+    return;
+  }
+  for (const p of presets) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(p.nom)}</td>
+      <td class="num">${escapeHtml(p.grams)} g</td>
+      <td class="num">${escapeHtml(p.molta)}</td>
+      <td>${escapeHtml(p.notes)}</td>
+      <td class="rowbtns">
+        <button class="secondary" data-act="edit" data-nom="${escapeHtml(p.nom)}">Edit</button>
+        <button class="danger" data-act="del" data-nom="${escapeHtml(p.nom)}">Delete</button>
+      </td>`;
+    body.appendChild(tr);
+  }
+  body.querySelectorAll('button[data-act="edit"]').forEach(b => b.addEventListener('click', () => startEdit(b.dataset.nom)));
+  body.querySelectorAll('button[data-act="del"]').forEach(b => b.addEventListener('click', () => delPreset(b.dataset.nom)));
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function startEdit(nom) {
+  const p = presets.find(x => x.nom === nom);
+  if (!p) return;
+  editingName = nom;
+  $('fNom').value = p.nom;
+  $('fGrams').value = p.grams;
+  $('fMolta').value = p.molta;
+  $('fNotes').value = p.notes;
+  $('formTitle').textContent = `Editing "${nom}"`;
+  $('btnCancelEdit').style.display = '';
+  $('fNom').focus();
+}
+
+function cancelEdit() {
+  editingName = null;
+  $('fNom').value = ''; $('fGrams').value = ''; $('fMolta').value = ''; $('fNotes').value = '';
+  $('formTitle').textContent = 'Add a new coffee';
+  $('btnCancelEdit').style.display = 'none';
+}
+
+async function delPreset(nom) {
+  if (!confirm(`Delete "${nom}" from the label?`)) return;
+  await enviaComanda(`DEL|${nom}`);
+  if (editingName === nom) cancelEdit();
+}
+
+async function savePreset() {
+  const nom = $('fNom').value.trim();
+  const grams = $('fGrams').value.trim();
+  const molta = $('fMolta').value.trim();
+  const notes = $('fNotes').value.trim();
+  if (!nom) { alert('Enter a coffee name.'); return; }
+  if (grams === '' || molta === '') { alert('Enter grams and grind number.'); return; }
+  if (nom.includes('|') || notes.includes('|')) { alert('The character "|" is not allowed (used by the BLE protocol).'); return; }
+
+  if (editingName && editingName !== nom) {
+    // el nom ha canviat: primer reanomenem, despres actualitzem valors
+    await enviaComanda(`REN|${editingName}|${nom}`);
+  }
+  await enviaComanda(`ADD|${nom}|${grams}|${molta}|${notes}`);
+  cancelEdit();
+}
+
+async function connect() {
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'EtiquetaCafe' }],
+      optionalServices: [SERVEI_UUID]
+    });
+    device.addEventListener('gattserverdisconnected', () => { setConnected(false); log('Disconnected.'); });
+
+    log('Connecting…');
+    const server = await device.gatt.connect();
+    const servei = await server.getPrimaryService(SERVEI_UUID);
+    rxChar = await servei.getCharacteristic(CARACT_RX_UUID);
+    txChar = await servei.getCharacteristic(CARACT_TX_UUID);
+    await txChar.startNotifications();
+    txChar.addEventListener('characteristicvaluechanged', onNotify);
+
+    setConnected(true);
+    log('Connected.');
+    await enviaComanda('SYNC');
+  } catch (e) {
+    log('Error: ' + e.message);
+  }
+}
+
+function disconnect() {
+  if (device?.gatt?.connected) device.gatt.disconnect();
+  setConnected(false);
+}
+
+$('btnConnect').addEventListener('click', connect);
+$('btnDisconnect').addEventListener('click', disconnect);
+$('btnSync').addEventListener('click', () => enviaComanda('SYNC'));
+$('btnSave').addEventListener('click', savePreset);
+$('btnCancelEdit').addEventListener('click', cancelEdit);
+
+// Avisos d'entorn, com al projecte de la claqueta
+if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+  $('httpsWarn').style.display = '';
+}
+const ua = navigator.userAgent;
+const esIOS = /iPad|iPhone|iPod/.test(ua);
+const esSafari = /^((?!chrome|android).)*safari/i.test(ua);
+if (esIOS && esSafari) $('safariWarn').style.display = '';
+if (!('bluetooth' in navigator)) {
+  $('btnConnect').disabled = true;
+  log('This browser does not support Web Bluetooth.');
+}
+</script>
+</body>
+</html>
