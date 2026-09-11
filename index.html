@@ -268,8 +268,13 @@ async function savePreset() {
 
 async function connect() {
   try {
+    // acceptAllDevices en lloc de filtrar per namePrefix: iOS pot ensenyar
+    // el selector de Web Bluetooth buit si el nom en memoria cau no coincideix
+    // exactament (majuscules/minuscules, restes d'una connexio anterior...),
+    // encara que un escaner generic (LightBlue) trobi la placa sense problema.
+    // Ensenyant tots els dispositius, tries "EtiquetaCafe" tu mateix.
     device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: 'EtiquetaCafe' }],
+      acceptAllDevices: true,
       optionalServices: [SERVEI_UUID]
     });
     device.addEventListener('gattserverdisconnected', () => { setConnected(false); log('Disconnected.'); });
