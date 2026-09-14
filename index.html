@@ -36,7 +36,7 @@
   th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
   th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase}
   td.num{white-space:nowrap}
-  .rowbtns{display:flex;gap:6px}
+  .rowbtns{display:flex;gap:6px;flex-wrap:wrap}
   .rowbtns button{padding:4px 9px;font-size:12px}
   #log{background:#1d1611;color:#e8ddce;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
     border-radius:8px;padding:10px;height:150px;overflow-y:auto;white-space:pre-wrap}
@@ -97,8 +97,8 @@
   <div class="row" style="margin-top:12px">
     <button id="btnSave" disabled>Save to label</button>
   </div>
-  <div class="hint">Accented letters are fine here — the label firmware converts
-    them to plain ASCII automatically (the e-paper font can't show accents).</div>
+  <div class="hint">Accented letters (à, é, í, ò, ó, ú, ï, ü, ç, ñ) show correctly on the
+    label. Any other accent falls back to "?" — the e-paper font only covers that set.</div>
 </div>
 
 <div class="card">
@@ -206,17 +206,25 @@ function renderTable() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(p.nom)}</td>
-      <td class="num">${escapeHtml(p.grams)} g</td>
+      <td class="num">${escapeHtml(p.grams)} gr</td>
       <td class="num">${escapeHtml(p.molta)}</td>
       <td>${escapeHtml(p.notes)}</td>
       <td class="rowbtns">
+        <button class="secondary" data-act="sel" data-nom="${escapeHtml(p.nom)}">Load</button>
         <button class="secondary" data-act="edit" data-nom="${escapeHtml(p.nom)}">Edit</button>
         <button class="danger" data-act="del" data-nom="${escapeHtml(p.nom)}">Delete</button>
       </td>`;
     body.appendChild(tr);
   }
+  body.querySelectorAll('button[data-act="sel"]').forEach(b => b.addEventListener('click', () => selPreset(b.dataset.nom)));
   body.querySelectorAll('button[data-act="edit"]').forEach(b => b.addEventListener('click', () => startEdit(b.dataset.nom)));
   body.querySelectorAll('button[data-act="del"]').forEach(b => b.addEventListener('click', () => delPreset(b.dataset.nom)));
+}
+
+// "Load": activa aquest perfil al dispositiu — dispara la pantalla
+// "Carregat satisfactoriament" a l'etiqueta (comanda BLE nova SEL).
+async function selPreset(nom) {
+  await enviaComanda(`SEL|${nom}`);
 }
 
 function escapeHtml(s) {
