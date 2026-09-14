@@ -276,13 +276,19 @@ async function savePreset() {
 
 async function connect() {
   try {
-    // acceptAllDevices en lloc de filtrar per namePrefix: iOS pot ensenyar
-    // el selector de Web Bluetooth buit si el nom en memoria cau no coincideix
-    // exactament (majuscules/minuscules, restes d'una connexio anterior...),
-    // encara que un escaner generic (LightBlue) trobi la placa sense problema.
-    // Ensenyant tots els dispositius, tries "EtiquetaCafe" tu mateix.
+    // Ronda 11e: abans acceptAllDevices (ensenyava tots els dispositius BLE
+    // propers i triaves "EtiquetaCafe" tu mateix) perque filtrar per
+    // namePrefix pot donar un selector buit a iOS si el nom en memoria cau
+    // no hi coincideix exactament. Ara filtrem per `name` exacte —a peticio
+    // teva, per no veure la llista sencera de dispositius— perque el nom
+    // que anuncia el propi firmware es sempre exactament "EtiquetaCafe"
+    // (BLEDevice::init("EtiquetaCafe"), vegeu configuraBLE() al .ino) i va
+    // al paquet d'anunci principal, no es trunca. [Suposant] Si en algun
+    // moment et torna a sortir el selector buit (per exemple si canvies el
+    // nom del dispositiu al firmware sense actualitzar aqui), torna a
+    // acceptAllDevices com abans.
     device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
+      filters: [{ name: 'EtiquetaCafe' }],
       optionalServices: [SERVEI_UUID]
     });
     device.addEventListener('gattserverdisconnected', () => { setConnected(false); log('Disconnected.'); });
